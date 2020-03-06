@@ -1,0 +1,145 @@
+void Line_Notify(String message) ;
+
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecureAxTLS.h> // กรณีขึ้น Error ให้เอาบรรทัดนี้ออก
+
+// Config connect WiFi
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
+
+// Line config
+#define LINE_TOKEN "LINE ACCESS TOKEN"
+
+
+
+String message = "Alert";
+
+
+
+int measurePin = A0;
+int ledPower = D5;    //Pin LED
+
+int samplingTime = 280;
+int deltaTime = 40;
+int sleepTime = 9680;
+
+float voMeasured = 0;
+float calcVoltage = 0;
+float dustDensity = 0;
+
+
+
+void delay_1Hour (int Hor) {
+  int i =0 ;
+  for (i=0 ; i<=Hor ; i++) {delay(3600000); }
+  }
+
+void setup() {
+  Serial.begin(9600);
+   
+ 
+   WiFi.mode(WIFI_STA);
+  // connect to wifi.
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("connecting");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print("*");
+    delay(500);
+  }
+  Serial.println();
+  Serial.print("connected: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+ 
+
+
+void loop() {
+  digitalWrite(ledPower, LOW); // power on the LED
+  delayMicroseconds(samplingTime);
+
+  voMeasured = analogRead(measurePin); // read the dust value
+
+  delayMicroseconds(deltaTime);
+  digitalWrite(ledPower, HIGH); // turn the LED off
+  delayMicroseconds(sleepTime);
+
+  // 0 - 3.3V mapped to 0 - 1023 integer values
+  // recover voltage
+  calcVoltage = voMeasured * (3.3 / 1024);
+
+  // linear eqaution taken from http://www.howmuchsnow.com/arduino/airquality/
+  // Chris Nafis (c) 2012
+  dustDensity = 0.17 * calcVoltage - 0.1;
+
+ /* Serial.print("Raw Signal Value (0-1023): ");
+  Serial.print(voMeasured);
+
+  Serial.print(" - Voltage: ");
+  Serial.print(calcVoltage);*/
+
+  if (dustDensity <= 0.00) {
+    dustDensity = 0.00;
+  }
+  dustDensity = dustDensity * 1000;
+
+  Serial.print(" - Dust Density: ");
+  Serial.print(dustDensity);
+  Serial.println(" µg/m³");
+  
+  delay(500);
+/* 16 - 67 Ugองค์การอนามัยโลกกำหนดมาตรฐานค่าเฉลี่ย 24 ชั่วโมงของฝุ่น PM 2.5 ไว้ที่ไม่เกิน 25
+และค่าเฉลี่ยรายปีอยู่ที่ 10 ไมโครกรัมต่อลูกบาศก์เมตร*/
+
+//https://www.ioxhop.com/article/47/esp8266-esp8285-%E0%B8%81%E0%B8%B1%E0%B8%9A%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B8%AA%E0%B9%88%E0%B8%87%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B9%81%E0%B8%88%E0%B9%89%E0%B8%87%E0%B9%80%E0%B8%95%E0%B8%B7%E0%B8%AD%E0%B8%99%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2-line
+
+
+ if (dustDensity>25){
+
+    String DustMess = String(dustDensity);
+    
+    Serial.println("LineMess");
+    Line_Notify(message);
+    Line_Notify(DustMess+" µg/m³");
+    // Serial.println();
+  }
+  delay_1Hour(1);
+ 
+}
+
+void Line_Notify(String message) {
+  axTLS::WiFiClientSecure client; // กรณีขึ้น Error ให้ลบ axTLS:: ข้างหน้าทิ้ง
+
+  if (!client.connect("notify-api.line.me", 443)) {
+    Serial.println("connection failed");
+    return;   
+  }
+
+  String req = "";
+  req += "POST /api/notify HTTP/1.1\r\n";
+  req += "Host: notify-api.line.me\r\n";
+  req += "Authorization: Bearer " + String(LINE_TOKEN) + "\r\n";
+  req += "Cache-Control: no-cache\r\n";
+  req += "User-Agent: ESP8266\r\n";
+  req += "Connection: close\r\n";
+  req += "Content-Type: application/x-www-form-urlencoded\r\n";
+  req += "Content-Length: " + String(String("message=" + message).length()) + "\r\n";
+  req += "\r\n";
+  req += "message=" + message;
+  // Serial.println(req);
+  client.print(req);
+    
+  delay(20);
+
+  // Serial.println("-------------");
+  while(client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") {
+      break;
+    }
+    //Serial.println(line);
+  }
+  // Serial.println("-------------");
+}
